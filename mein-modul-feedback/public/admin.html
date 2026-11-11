@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin – Modul-Feedback</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
+      body { font-family: 'Space Grotesk', sans-serif; background-color: #f6f5ee; }
+      .neo-box { border: 3px solid #111; box-shadow: 4px 4px 0 #111; }
+      .neo-btn { border: 3px solid #111; box-shadow: 4px 4px 0 #111; transition: all 0.1s ease; }
+      .neo-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #111; }
+    </style>
+  </head>
+  <body class="min-h-screen p-4 text-zinc-900 md:p-8">
+    <main class="mx-auto max-w-5xl space-y-6">
+      <header class="neo-box flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6">
+        <div>
+          <h1 class="text-3xl font-black">🛠️ Feedback-Administration</h1>
+          <a href="/" class="mt-1 inline-block text-sm font-bold text-indigo-700 underline">Zur Feedback-Seite</a>
+        </div>
+        <button id="logoutButton" class="neo-btn hidden rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold">Abmelden</button>
+      </header>
+
+      <section id="loginPanel" class="neo-box mx-auto max-w-md space-y-4 rounded-2xl bg-white p-6">
+        <h2 class="text-xl font-black">Admin-Anmeldung</h2>
+        <form id="loginForm" class="space-y-3">
+          <label class="block text-xs font-bold uppercase" for="username">Benutzername</label>
+          <input id="username" name="username" autocomplete="username" required class="neo-box w-full rounded-xl p-3 text-sm font-bold outline-none">
+          <label class="block text-xs font-bold uppercase" for="password">Passwort</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required class="neo-box w-full rounded-xl p-3 text-sm font-bold outline-none">
+          <p id="loginError" class="hidden text-sm font-bold text-red-700" role="alert"></p>
+          <button class="neo-btn w-full rounded-xl bg-lime-300 py-3 font-black" type="submit">Anmelden</button>
+        </form>
+      </section>
+
+      <section id="adminPanel" class="hidden space-y-4">
+        <p id="adminMessage" class="hidden rounded-xl border-2 border-zinc-900 bg-emerald-100 p-3 text-sm font-bold" role="status"></p>
+        <div id="entries" class="space-y-5" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script>
+      const DATA_URL = '/api/data';
+      const loginPanel = document.getElementById('loginPanel');
+      const adminPanel = document.getElementById('adminPanel');
+      const entries = document.getElementById('entries');
+      let modules = [];
+
+      function escapeHTML(value) {
+        return String(value ?? '').replace(/[&<>"']/g, character => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[character]);
+      }
+
+      async function request(url, options = {}) {
+        const response = await fetch(url, options);
+        let result = {};
+        try {
+          result = await response.json();
+        } catch {
+          // Use the HTTP status when the server does not return JSON.
+        }
+        if (!response.ok) throw new Error(result.error || `Anfrage fehlgeschlagen (HTTP ${response.status})`);
+        return result;
+      }
+
+      function showAdmin() {
+        loginPanel.classList.add('hidden');
+        adminPanel.classList.remove('hidden');
+        document.getElementById('logoutButton').classList.remove('hidden');
+      }
+
+      function renderEntries() {
+        if (modules.length === 0) {
+          entries.innerHTML = '<div class="neo-box rounded-2xl bg-white p-8 text-center font-bold">Noch keine Module vorhanden.</div>';
+          return;
+        }
+
+        entries.innerHTML = modules.map(module => {
+          const reviews = Array.isArray(module.reviews) ? module.reviews : [];
+          return `
+            <section class="neo-box space-y-4 rounded-2xl bg-white p-5">
+              <form class="moduleForm grid gap-3 md:grid-cols-3" data-module-id="${escapeHTML(module.id)}">
+                <label class="text-xs font-bold uppercase">Modulname
+                  <input name="name" required maxlength="200" value="${escapeHTML(module.name)}" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">
+                </label>
+                <label class="text-xs font-bold uppercase">Kürzel / Code
+                  <input name="code" maxlength="80" value="${escapeHTML(module.code)}" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">
+                </label>
+                <label class="text-xs font-bold uppercase">Dozent:in
+                  <input name="prof" maxlength="200" value="${escapeHTML(module.prof)}" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">
+                </label>
+                <div class="flex flex-wrap items-center gap-2 md:col-span-3">
+                  <button class="neo-btn rounded-lg bg-indigo-300 px-3 py-1.5 text-sm font-bold" type="submit">Modul speichern</button>
+                  <button class="deleteModule neo-btn rounded-lg bg-red-200 px-3 py-1.5 text-sm font-bold" type="button" data-module-id="${escapeHTML(module.id)}">Modul löschen</button>
+                  <span class="text-xs font-bold text-zinc-500">${reviews.length} Einträge</span>
+                </div>
+              </form>
+              <div class="space-y-3 border-t-2 border-zinc-200 pt-4">
+                ${reviews.length === 0 ? '<p class="text-sm font-bold text-zinc-500">Keine Einträge.</p>' : ''}
+                ${reviews.map((review, index) => `
+                  <form class="reviewForm grid gap-3 rounded-xl border-2 border-zinc-200 bg-zinc-50 p-3 md:grid-cols-6" data-module-id="${escapeHTML(module.id)}" data-review-index="${index}">
+                    <label class="text-xs font-bold uppercase">Note
+                      <input name="rating" type="number" min="1" max="5" required value="${escapeHTML(review.rating)}" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">
+                    </label>
+                    <label class="text-xs font-bold uppercase md:col-span-2">Emojis (mit Leerzeichen trennen)
+                      <input name="emojis" value="${escapeHTML(Array.isArray(review.emojis) ? review.emojis.join(' ') : '')}" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">
+                    </label>
+                    <label class="text-xs font-bold uppercase md:col-span-3">Kommentar
+                      <textarea name="comment" maxlength="5000" rows="2" class="neo-box mt-1 w-full rounded-lg p-2 text-sm">${escapeHTML(review.comment)}</textarea>
+                    </label>
+                    <div class="flex flex-wrap items-center gap-2 md:col-span-6">
+                      <span class="mr-auto text-xs font-bold text-zinc-500">${escapeHTML(new Date(review.timestamp).toLocaleString('de-DE') === 'Invalid Date' ? '' : new Date(review.timestamp).toLocaleString('de-DE'))}</span>
+                      <button class="neo-btn rounded-lg bg-lime-300 px-3 py-1.5 text-sm font-bold" type="submit">Eintrag speichern</button>
+                      <button class="deleteReview neo-btn rounded-lg bg-red-200 px-3 py-1.5 text-sm font-bold" type="button">Eintrag löschen</button>
+                    </div>
+                  </form>`).join('')}
+              </div>
+            </section>`;
+        }).join('');
+
+        entries.querySelectorAll('.moduleForm').forEach(form => form.addEventListener('submit', saveModule));
+        entries.querySelectorAll('.reviewForm').forEach(form => form.addEventListener('submit', saveReview));
+        entries.querySelectorAll('.deleteModule').forEach(button => button.addEventListener('click', deleteModule));
+        entries.querySelectorAll('.deleteReview').forEach(button => button.addEventListener('click', deleteReview));
+      }
+
+      async function loadModules() {
+        const result = await request(DATA_URL);
+        if (!Array.isArray(result)) throw new Error('Die gespeicherten Moduldaten haben ein ungültiges Format.');
+        modules = result;
+        renderEntries();
+      }
+
+      async function adminAction(body) {
+        await request(DATA_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        await loadModules();
+        const message = document.getElementById('adminMessage');
+        message.textContent = 'Änderungen gespeichert.';
+        message.classList.remove('hidden');
+      }
+
+      async function saveModule(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const values = new FormData(form);
+        try {
+          await adminAction({
+            action: 'updateModule',
+            moduleId: form.dataset.moduleId,
+            name: values.get('name'),
+            code: values.get('code'),
+            prof: values.get('prof')
+          });
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      async function saveReview(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const values = new FormData(form);
+        try {
+          await adminAction({
+            action: 'updateReview',
+            moduleId: form.dataset.moduleId,
+            reviewIndex: Number(form.dataset.reviewIndex),
+            rating: Number(values.get('rating')),
+            emojis: String(values.get('emojis')).trim().split(/\s+/).filter(Boolean),
+            comment: values.get('comment')
+          });
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      async function deleteModule(event) {
+        const moduleId = event.currentTarget.dataset.moduleId;
+        if (!confirm('Dieses Modul und alle zugehörigen Einträge löschen?')) return;
+        try {
+          await adminAction({ action: 'deleteModule', moduleId });
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      async function deleteReview(event) {
+        const form = event.currentTarget.closest('.reviewForm');
+        if (!confirm('Diesen Eintrag löschen?')) return;
+        try {
+          await adminAction({
+            action: 'deleteReview',
+            moduleId: form.dataset.moduleId,
+            reviewIndex: Number(form.dataset.reviewIndex)
+          });
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      document.getElementById('loginForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const errorElement = document.getElementById('loginError');
+        errorElement.classList.add('hidden');
+        const values = new FormData(event.currentTarget);
+        try {
+          await request('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: values.get('username'),
+              password: values.get('password')
+            })
+          });
+          showAdmin();
+          await loadModules();
+        } catch (error) {
+          errorElement.textContent = error.message;
+          errorElement.classList.remove('hidden');
+        }
+      });
+
+      document.getElementById('logoutButton').addEventListener('click', async () => {
+        try {
+          await request('/api/admin/logout', { method: 'POST' });
+          window.location.reload();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      request('/api/admin/session')
+        .then(async session => {
+          if (!session.authenticated) return;
+          showAdmin();
+          try {
+            await loadModules();
+          } catch (error) {
+            const message = document.getElementById('adminMessage');
+            message.textContent = error.message;
+            message.classList.remove('hidden', 'bg-emerald-100');
+            message.classList.add('bg-red-100');
+          }
+        })
+        .catch(error => {
+          document.getElementById('loginError').textContent = error.message;
+          document.getElementById('loginError').classList.remove('hidden');
+        });
+    </script>
+  </body>
+</html>

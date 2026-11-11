@@ -54,6 +54,9 @@
           <button onclick="openModal()" class="neo-btn rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold">
             + Modul hinzufügen
           </button>
+          <a href="/admin.html" class="neo-btn rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold">
+            Admin
+          </a>
           <button onclick="exportData()" class="neo-btn rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold">
             JSON-Export
           </button>
@@ -152,11 +155,11 @@
         }
       }
 
-      async function persistModules(modules) {
+      async function persistPublicAction(action, data) {
         const response = await fetch(STORAGE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ modules })
+          body: JSON.stringify({ action, ...data })
         });
         if (!response.ok) {
           let message = `Speichern fehlgeschlagen (HTTP ${response.status})`;
@@ -304,18 +307,16 @@
         const review = {
           rating: state.selectedRating,
           emojis: [...state.selectedEmojis],
-          comment: state.comment.trim(),
-          timestamp: new Date().toISOString()
+          comment: state.comment.trim()
         };
-        const modules = state.modules.map(item => item.id === module.id
-          ? { ...item, reviews: [review, ...(Array.isArray(item.reviews) ? item.reviews : [])] }
-          : item
-        );
         const button = document.getElementById('submitReviewButton');
         button.disabled = true;
         try {
-          await persistModules(modules);
-          state.modules = modules;
+          const result = await persistPublicAction('addReview', { moduleId: module.id, review });
+          state.modules = state.modules.map(item => item.id === module.id
+            ? { ...item, reviews: [result.review, ...(Array.isArray(item.reviews) ? item.reviews : [])] }
+            : item
+          );
           state.selectedEmojis = [];
           state.selectedRating = 3;
           state.comment = '';
@@ -364,13 +365,12 @@
           prof,
           reviews: []
         };
-        const modules = [...state.modules, newModule];
         const button = document.getElementById('saveModuleButton');
         button.disabled = true;
         errorElement.classList.add('hidden');
         try {
-          await persistModules(modules);
-          state.modules = modules;
+          const result = await persistPublicAction('createModule', { module: newModule });
+          state.modules = [...state.modules, result.module];
           state.selectedModuleId = newModule.id;
           state.selectedRating = 3;
           state.selectedEmojis = [];
